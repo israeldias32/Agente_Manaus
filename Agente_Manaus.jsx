@@ -1,446 +1,1045 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import pygame
+import math
+import random
+import sys
+import time
 
-const TILE = 40;
-const COLS = 15;
-const ROWS = 10;
-const W = COLS * TILE;
-const H = ROWS * TILE;
+# -- Constantes ---------------------------------------------------------------
+TILE  = 40
+COLS  = 15
+ROWS  = 10
+W     = COLS * TILE   # 600
+H     = ROWS * TILE   # 400
+FPS   = 60
+HUD_H = 36
 
-const MAP = [
-  [2,2,2,2,2,1,0,0,0,0,1,2,2,2,2],
-  [2,2,2,2,2,1,0,0,0,0,1,2,2,2,2],
-  [2,2,2,2,2,1,0,0,0,0,1,2,2,2,2],
-  [1,1,1,1,1,1,0,0,0,0,1,1,1,1,1],
-  [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
-  [1,1,1,1,1,1,0,0,0,0,1,3,3,3,1],
-  [2,2,2,2,2,1,0,0,0,0,1,3,3,3,1],
-  [2,2,2,2,2,1,0,0,0,0,1,3,3,3,1],
-  [2,2,2,2,2,1,0,0,0,0,1,1,1,1,1],
-  [1,1,1,1,1,1,0,0,0,0,1,1,1,1,1],
-];
-
-const TILE_COLORS = { 0:"#3e3e58", 1:"#c8b87c", 2:"#7a6abf", 3:"#4caf50" };
-const BLDG_COLS = ["#7a6abf","#6a5aad","#8870cf","#5a4f9f","#9480d9","#6050be"];
-
-const TRASH = [
-  { icon:"🧴", label:"Plástico",   color:"#ff4444", pts:10 },
-  { icon:"📦", label:"Papelão",    color:"#8B4513", pts:8  },
-  { icon:"🥤", label:"Lata",       color:"#aaaaaa", pts:12 },
-  { icon:"🍶", label:"Vidro",      color:"#44aaff", pts:15 },
-  { icon:"📰", label:"Papel",      color:"#dddd44", pts:7  },
-  { icon:"💻", label:"Eletrônico", color:"#44ffaa", pts:20 },
-];
-
-function rnd(a, b) { return Math.random() * (b - a) + a; }
-function rndI(a, b) { return Math.floor(rnd(a, b)); }
-
-function getCell(x, y) {
-  const cx = Math.floor(x), cy = Math.floor(y);
-  if (cx < 0 || cy < 0 || cx >= COLS || cy >= ROWS) return 2;
-  return MAP[cy]?.[cx] ?? 2;
-}
-function walkable(x, y) {
-  const c = getCell(x, y);
-  return c === 0 || c === 1 || c === 3;
-}
-
-function makeBldgCache() {
-  const cache = {};
-  for (let r = 0; r < ROWS; r++)
-    for (let c = 0; c < COLS; c++)
-      if (MAP[r]?.[c] === 2)
-        cache[`${c},${r}`] = {
-          col: BLDG_COLS[rndI(0, BLDG_COLS.length)],
-          wins: Array.from({ length: 6 }, () => ({
-            lit: Math.random() > 0.4,
-            cx: rndI(0, 3), cy: rndI(0, 2)
-          }))
-        };
-  return cache;
-}
-
-function spawnItems(level) {
-  const count = 5 + level * 2;
-  const arr = [];
-  let tries = 0;
-  while (arr.length < count && tries < 800) {
-    tries++;
-    const tx = rnd(0.6, COLS - 0.6), ty = rnd(0.6, ROWS - 0.6);
-    if (walkable(tx, ty)) {
-      const t = TRASH[rndI(0, TRASH.length)];
-      arr.push({ ...t, x: tx, y: ty, bob: rnd(0, Math.PI * 2), collected: false, id: Math.random() });
-    }
-  }
-  return arr;
+# -- Mapas --------------------------------------------------------------------
+# 0=rua  1=calcada  2=predio  3=parque  4=teatro  5=predio luxo  6=praca
+MAPS = {
+    1: {
+        "name": "Centro de Manaus",
+        "desc": "Ruas movimentadas do centro",
+        "data": [
+            [2,2,2,2,2,1,0,0,0,0,1,2,2,2,2],
+            [2,2,2,2,2,1,0,0,0,0,1,2,2,2,2],
+            [2,2,2,2,2,1,0,0,0,0,1,2,2,2,2],
+            [1,1,1,1,1,1,0,0,0,0,1,1,1,1,1],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [1,1,1,1,1,1,0,0,0,0,1,3,3,3,1],
+            [2,2,2,2,2,1,0,0,0,0,1,3,3,3,1],
+            [2,2,2,2,2,1,0,0,0,0,1,3,3,3,1],
+            [2,2,2,2,2,1,0,0,0,0,1,1,1,1,1],
+            [1,1,1,1,1,1,0,0,0,0,1,1,1,1,1],
+        ],
+    },
+    2: {
+        "name": "Teatro Amazonas",
+        "desc": "O majestoso Teatro Amazonas - Belle Epoque na Amazonia",
+        "data": [
+            [3,3,1,1,1,1,1,1,1,1,1,1,1,3,3],
+            [3,1,1,6,6,6,6,6,6,6,6,6,1,1,3],
+            [1,1,6,6,4,4,4,4,4,4,4,6,6,1,1],
+            [1,6,6,4,4,4,4,4,4,4,4,4,6,6,1],
+            [0,0,0,1,1,4,4,4,4,4,1,1,0,0,0],
+            [0,0,0,1,1,1,1,1,1,1,1,1,0,0,0],
+            [1,1,1,1,0,0,0,0,0,0,0,1,1,1,1],
+            [1,1,1,1,0,0,0,0,0,0,0,1,1,1,1],
+            [3,1,1,1,0,0,0,0,0,0,0,1,1,1,3],
+            [3,3,1,1,1,1,1,1,1,1,1,1,1,3,3],
+        ],
+    },
+    3: {
+        "name": "Adrianopolis",
+        "desc": "Bairro nobre com predios modernos e alamedas arborizadas",
+        "data": [
+            [5,5,5,1,5,5,5,1,5,5,5,1,5,5,5],
+            [5,5,5,1,5,5,5,1,5,5,5,1,5,5,5],
+            [5,5,5,1,5,5,5,1,5,5,5,1,5,5,5],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+            [5,5,5,1,3,3,3,1,5,5,5,1,5,5,5],
+            [5,5,5,1,3,3,3,1,5,5,5,1,5,5,5],
+            [5,5,5,1,3,3,3,1,5,5,5,1,5,5,5],
+            [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        ],
+    },
 }
 
-export default function Agente_Manaus() {
-  const canvasRef = useRef(null);
-  const stateRef = useRef({
-    player: { x: 7.5, y: 4.5, dir: 0, moving: false },
-    items: [],
-    collectAnims: [],
-    keys: { ArrowUp: false, ArrowDown: false, ArrowLeft: false, ArrowRight: false },
-    score: 0,
-    timeLeft: 60,
-    level: 1,
-    timerAcc: 0,
-    gameOver: false,
-    bldgCache: makeBldgCache(),
-    msg: "",
-    msgUntil: 0,
-  });
+# Tema visual de cada mapa
+MAP_THEMES = {
+    1: {
+        "top":    (55, 45, 110),
+        "bot":    (28, 22, 65),
+        "border": (80, 65, 150),
+        "sel":    (255, 160, 30),
+        "icon":   "[C]",
+        "accent": (255, 180, 80),
+    },
+    2: {
+        "top":    (100, 60, 20),
+        "bot":    (55, 30, 10),
+        "border": (140, 90, 30),
+        "sel":    (255, 210, 80),
+        "icon":   "[T]",
+        "accent": (255, 220, 100),
+    },
+    3: {
+        "top":    (20, 80, 110),
+        "bot":    (10, 45, 70),
+        "border": (40, 120, 160),
+        "sel":    (80, 200, 255),
+        "icon":   "[N]",
+        "accent": (100, 220, 255),
+    },
+}
 
-  const [ui, setUi] = useState({ score: 0, timeLeft: 60, level: 1, gameOver: false, msg: "" });
-  const rafRef = useRef(null);
-  const lastRef = useRef(null);
+# Cores por tipo de tile
+TILE_COLORS = {
+    0: (52,  52,  78),
+    1: (200, 184, 124),
+    2: (122, 106, 191),
+    3: (76,  175, 80),
+    4: (220, 180, 120),
+    5: (80,  140, 200),
+    6: (160, 200, 120),
+}
 
-  // Init items
-  useEffect(() => {
-    stateRef.current.items = spawnItems(1);
-    stateRef.current.msg = "♻️ Colete todo o lixo reciclável!";
-    stateRef.current.msgUntil = performance.now() + 2200;
-  }, []);
+BLDG_COLORS = [
+    (122,106,191),(106,90,173),(136,112,207),
+    (90, 79, 159),(148,128,217),(96, 80,190),
+]
+LUXO_COLORS = [
+    (70,130,200),(55,110,180),(85,150,210),
+    (60,120,190),(90,160,220),(50,100,175),
+]
 
-  // Input
-  useEffect(() => {
-    const onDown = (e) => {
-      if (stateRef.current.keys.hasOwnProperty(e.key)) {
-        stateRef.current.keys[e.key] = true;
-        e.preventDefault();
-      }
-    };
-    const onUp = (e) => {
-      if (stateRef.current.keys.hasOwnProperty(e.key)) stateRef.current.keys[e.key] = false;
-    };
-    window.addEventListener("keydown", onDown);
-    window.addEventListener("keyup", onUp);
-    return () => { window.removeEventListener("keydown", onDown); window.removeEventListener("keyup", onUp); };
-  }, []);
+# -- Tipos de lixo ------------------------------------------------------------
+TRASH = [
+    {"icon": "[P]",  "label": "Plastico",   "color": (255, 68,  68),  "pts": 10},
+    {"icon": "[C]",  "label": "Papelao",    "color": (139, 69,  19),  "pts": 8 },
+    {"icon": "[L]",  "label": "Lata",       "color": (170, 170, 170), "pts": 12},
+    {"icon": "[V]",  "label": "Vidro",      "color": (68,  170, 255), "pts": 15},
+    {"icon": "[Pa]", "label": "Papel",      "color": (221, 221, 68),  "pts": 7 },
+    {"icon": "[E]",  "label": "Eletronico", "color": (68,  255, 170), "pts": 20},
+]
 
-  // Game loop
-  const loop = useCallback((ts) => {
-    if (!lastRef.current) lastRef.current = ts;
-    const dt = Math.min((ts - lastRef.current) / 1000, 0.05);
-    lastRef.current = ts;
-    const t = ts / 1000;
-    const s = stateRef.current;
+# -- Helpers ------------------------------------------------------------------
+def rnd(a, b):   return random.uniform(a, b)
+def rnd_i(a, b): return random.randint(a, b - 1)
 
-    if (!s.gameOver) {
-      // Timer
-      s.timerAcc += dt;
-      if (s.timerAcc >= 1) {
-        s.timerAcc -= 1;
-        s.timeLeft--;
-        if (s.timeLeft <= 0) {
-          s.timeLeft = 0;
-          s.gameOver = true;
-          s.msg = `🏁 FIM! ${s.score} pontos! Recarregue para jogar.`;
-          s.msgUntil = Infinity;
+def get_cell(map_data, x, y):
+    cx, cy = int(x), int(y)
+    if cx < 0 or cy < 0 or cx >= COLS or cy >= ROWS:
+        return 2
+    return map_data[cy][cx]
+
+def walkable(map_data, x, y):
+    return get_cell(map_data, x, y) in (0, 1, 3, 6)
+
+def lerp_color(c1, c2, t):
+    return tuple(int(c1[i] + (c2[i] - c1[i]) * t) for i in range(3))
+
+def draw_text(surf, text, font, color, x, y, center=False):
+    rendered = font.render(text, True, color)
+    rect = rendered.get_rect()
+    if center:
+        rect.center = (x, y)
+    else:
+        rect.topleft = (x, y)
+    surf.blit(rendered, rect)
+    return rect
+
+def draw_text_shadow(surf, text, font, color, shadow_color, x, y, center=False, offset=2):
+    draw_text(surf, text, font, shadow_color, x + offset, y + offset, center)
+    draw_text(surf, text, font, color, x, y, center)
+
+def draw_rounded_rect(surf, color, rect, radius, alpha=255):
+    if alpha < 255:
+        s = pygame.Surface((rect[2], rect[3]), pygame.SRCALPHA)
+        pygame.draw.rect(s, (*color, alpha), (0, 0, rect[2], rect[3]), border_radius=radius)
+        surf.blit(s, (rect[0], rect[1]))
+    else:
+        pygame.draw.rect(surf, color, rect, border_radius=radius)
+
+def draw_gradient_rect(surf, color_top, color_bot, rect, radius=0):
+    x, y, w, h = rect
+    grad_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+    for i in range(h):
+        t = i / max(h - 1, 1)
+        r = int(color_top[0] + (color_bot[0] - color_top[0]) * t)
+        g = int(color_top[1] + (color_bot[1] - color_top[1]) * t)
+        b = int(color_top[2] + (color_bot[2] - color_top[2]) * t)
+        pygame.draw.line(grad_surf, (r, g, b, 255), (0, i), (w, i))
+    if radius > 0:
+        mask = pygame.Surface((w, h), pygame.SRCALPHA)
+        mask.fill((0, 0, 0, 0))
+        pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, w, h), border_radius=radius)
+        grad_surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    surf.blit(grad_surf, (x, y))
+
+def draw_glow_rect(surf, color, rect, radius, glow_size=8, glow_alpha=60):
+    x, y, w, h = rect
+    glow_surf = pygame.Surface((w + glow_size*2, h + glow_size*2), pygame.SRCALPHA)
+    for i in range(glow_size, 0, -1):
+        alpha = int(glow_alpha * (1 - i/glow_size) * (i/glow_size))
+        pygame.draw.rect(
+            glow_surf, (*color, alpha),
+            (glow_size - i, glow_size - i, w + i*2, h + i*2),
+            border_radius=radius + i
+        )
+    surf.blit(glow_surf, (x - glow_size, y - glow_size))
+
+def draw_inner_highlight(surf, rect, radius, alpha=40):
+    x, y, w, h = rect
+    hl = pygame.Surface((w - 4, 4), pygame.SRCALPHA)
+    for i in range(4):
+        a = int(alpha * (1 - i/4))
+        pygame.draw.line(hl, (255, 255, 255, a), (0, i), (w - 4, i))
+    surf.blit(hl, (x + 2, y + 2))
+
+# -- Cache de predios ---------------------------------------------------------
+def make_bldg_cache(map_data):
+    cache = {}
+    for r in range(ROWS):
+        for c in range(COLS):
+            cell = map_data[r][c]
+            if cell in (2, 5):
+                palette = LUXO_COLORS if cell == 5 else BLDG_COLORS
+                cache[(c, r)] = {
+                    "col":  random.choice(palette),
+                    "cell": cell,
+                    "wins": [
+                        {"lit": random.random() > 0.4,
+                         "cx": rnd_i(0, 3), "cy": rnd_i(0, 2)}
+                        for _ in range(6)
+                    ],
+                    "floors": rnd_i(3, 8) if cell == 5 else rnd_i(1, 4),
+                }
+    return cache
+
+# -- Spawn de itens -----------------------------------------------------------
+def spawn_items(level, map_data):
+    count = 5 + level * 2
+    items = []
+    tries = 0
+    while len(items) < count and tries < 800:
+        tries += 1
+        tx = rnd(0.6, COLS - 0.6)
+        ty = rnd(0.6, ROWS - 0.6)
+        if walkable(map_data, tx, ty):
+            t = random.choice(TRASH)
+            items.append({
+                **t,
+                "x": tx, "y": ty,
+                "bob": rnd(0, math.pi * 2),
+                "collected": False,
+                "id": random.random()
+            })
+    return items
+
+# -- Desenha mapa -------------------------------------------------------------
+def draw_map(surf, map_id, map_data, bldg_cache, t, font_tree, font_emoji_lg, font_big):
+    for r in range(ROWS):
+        for c in range(COLS):
+            cell = map_data[r][c]
+            color = TILE_COLORS.get(cell, (85,85,85))
+            rect  = (c*TILE, r*TILE, TILE, TILE)
+            pygame.draw.rect(surf, color, rect)
+
+            if cell in (2, 5):
+                bd = bldg_cache.get((c, r))
+                if bd:
+                    col = bd["col"]
+                    pygame.draw.rect(surf, col, (c*TILE+2, r*TILE+2, TILE-4, TILE-4))
+                    for w in bd["wins"]:
+                        wc = (255, 253, 200) if w["lit"] else (30, 40, 60)
+                        if cell == 5:
+                            pygame.draw.rect(surf, wc, (c*TILE+4+w["cx"]*10, r*TILE+4+w["cy"]*13, 9, 10))
+                            pygame.draw.rect(surf, (*col, 120), (c*TILE+4+w["cx"]*10, r*TILE+4+w["cy"]*13, 9, 10), 1)
+                        else:
+                            pygame.draw.rect(surf, wc, (c*TILE+5+w["cx"]*11, r*TILE+5+w["cy"]*14, 8, 9))
+                    if cell == 5:
+                        glss = pygame.Surface((TILE-4, TILE-4), pygame.SRCALPHA)
+                        pygame.draw.rect(glss, (255,255,255,18), (0, 0, TILE-4, TILE-4))
+                        pygame.draw.line(glss, (255,255,255,45), (3,0), (0,3), 1)
+                        surf.blit(glss, (c*TILE+2, r*TILE+2))
+
+            elif cell == 4:
+                _draw_teatro_tile(surf, c, r, t, font_big)
+
+            elif cell == 6:
+                s2 = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                pygame.draw.rect(s2, (120,190,90,80), (0,0,TILE,TILE))
+                surf.blit(s2, (c*TILE, r*TILE))
+                for fx, fy, fc in [(8,8,(255,220,50)),(28,20,(255,120,150)),(18,30,(180,255,100))]:
+                    pygame.draw.circle(surf, fc, (c*TILE+fx, r*TILE+fy), 3)
+
+            elif cell == 0:
+                s2 = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                lc = (255,255,200,30)
+                if r == 4 or r == 9:
+                    pygame.draw.line(s2, lc, (0, TILE//2), (TILE, TILE//2), 2)
+                if map_id == 1 and 6 <= c <= 9:
+                    pygame.draw.line(s2, lc, (TILE//2, 0), (TILE//2, TILE), 2)
+                surf.blit(s2, (c*TILE, r*TILE))
+
+            elif cell == 3:
+                # Arvore desenhada com formas geometricas (sem emoji)
+                tx_ = c*TILE + TILE//2
+                ty_ = r*TILE + TILE//2
+                pygame.draw.rect(surf, (101, 67, 33), (tx_-3, ty_, 6, 12))
+                pygame.draw.circle(surf, (34, 139, 34), (tx_, ty_-2), 12)
+                pygame.draw.circle(surf, (50, 180, 50), (tx_-4, ty_-6), 7)
+                pygame.draw.circle(surf, (50, 180, 50), (tx_+4, ty_-6), 7)
+
+            elif cell == 1:
+                s2 = pygame.Surface((TILE, TILE), pygame.SRCALPHA)
+                for i in range(1, 4):
+                    pygame.draw.line(s2, (0,0,0,22), (0,i*10),(TILE,i*10), 1)
+                surf.blit(s2, (c*TILE, r*TILE))
+
+def _draw_teatro_tile(surf, c, r, t, font_big):
+    cx = c*TILE
+    cy = r*TILE
+    pygame.draw.rect(surf, (210, 170, 80), (cx+1, cy+1, TILE-2, TILE-2))
+    for col_x in [4, 12, 20, 28]:
+        pygame.draw.rect(surf, (180, 140, 50), (cx+col_x, cy+5, 5, TILE-8))
+    pygame.draw.arc(surf, (150, 110, 30),
+                    pygame.Rect(cx+2, cy+2, TILE-4, 16), 0, math.pi, 3)
+    if c in (5,6,7,8,9) and r in (2,3):
+        pygame.draw.circle(surf, (180, 60, 60), (cx+TILE//2, cy+4), 5)
+        pygame.draw.circle(surf, (220, 200, 50), (cx+TILE//2, cy+4), 3)
+
+# -- Desenha itens ------------------------------------------------------------
+def draw_items(surf, items, t, font_item, font_pts):
+    for it in items:
+        if it["collected"]: continue
+        bob = math.sin(t*3 + it["bob"]) * 3
+        sx = int(it["x"]*TILE - 12)
+        sy = int(it["y"]*TILE - 14 + bob)
+
+        # Glow colorido
+        glow = pygame.Surface((44,44), pygame.SRCALPHA)
+        pygame.draw.circle(glow, (*it["color"],80), (22,22), 18)
+        surf.blit(glow, (sx-4, sy-4))
+
+        # Icone do lixo como retangulo colorido com texto
+        icon_rect = pygame.Rect(sx, sy, 28, 18)
+        pygame.draw.rect(surf, it["color"], icon_rect, border_radius=4)
+        pygame.draw.rect(surf, (255,255,255), icon_rect, 1, border_radius=4)
+        icon_surf = font_pts.render(it["icon"], True, (255,255,255))
+        surf.blit(icon_surf, (sx + 2, sy + 3))
+
+        # Badge de pontos
+        badge = (sx+2, sy+20, 26, 13)
+        draw_rounded_rect(surf, (0,0,0), badge, 4, 165)
+        draw_text(surf, f"+{it['pts']}", font_pts, (255,255,255), sx+4, sy+22)
+
+# -- Animacoes de coleta ------------------------------------------------------
+def draw_collect_anims(surf, anims, t, font_anim, font_pts_big):
+    for a in anims:
+        p = (t - a["start"]) / 0.85
+        if p >= 1: continue
+        alpha = int((1-p)*255)
+        rise  = p * 32
+        ax = int(a["x"]*TILE - 12)
+        ay = int(a["y"]*TILE - 22 - rise)
+
+        icon_surf = font_anim.render(a["icon"], True, (255,255,255))
+        icon_surf.set_alpha(alpha)
+        surf.blit(icon_surf, (ax, ay))
+
+        pts_surf = font_pts_big.render(f"+{a['pts']}", True, (255,215,0))
+        pts_surf.set_alpha(alpha)
+        surf.blit(pts_surf, (ax+30, ay+4))
+
+# -- Jogador ------------------------------------------------------------------
+def draw_player(surf, player, t, font_badge, font_recyc):
+    px = int(player["x"]*TILE)
+    py = int(player["y"]*TILE)
+    moving    = player["moving"]
+    leg_swing = int(math.sin(t*10)*5) if moving else 0
+
+    # Sombra
+    shadow = pygame.Surface((22,10), pygame.SRCALPHA)
+    pygame.draw.ellipse(shadow, (0,0,0,71), (0,0,22,10))
+    surf.blit(shadow, (px-11, py+12))
+
+    # Pernas
+    leg_color  = (230,92,0)
+    shoe_color = (26,26,26)
+    pygame.draw.rect(surf, leg_color,  (px-6, py+4,  5, 11+leg_swing))
+    pygame.draw.rect(surf, leg_color,  (px+1, py+4,  5, 11-leg_swing))
+    pygame.draw.rect(surf, shoe_color, (px-7, py+13, 7, 5))
+    pygame.draw.rect(surf, shoe_color, (px,   py+13, 7, 5))
+
+    # Corpo
+    for i in range(16):
+        frac = i/16
+        c = lerp_color((255,140,0),(255,85,0), frac)
+        pygame.draw.line(surf, c, (px-9, py-8+i),(px+9, py-8+i))
+    pygame.draw.rect(surf, (255,255,150),(px-8, py-1, 16, 3))
+    pygame.draw.rect(surf, (255,255,150),(px-8, py+5, 16, 3))
+
+    # Nome no peito
+    label = font_badge.render("MANAUS", True, (0,0,0))
+    surf.blit(label, (px-label.get_width()//2, py))
+
+    # Bracos
+    pygame.draw.rect(surf, leg_color, (px-14, py-5, 6, 4))
+    pygame.draw.rect(surf, leg_color, (px+8,  py-5, 6, 4))
+
+    # Ombros / bolsa de coleta
+    pygame.draw.circle(surf, (255,215,0), (px-14, py-3), 4)
+    pygame.draw.circle(surf, (255,215,0), (px+14, py-3), 4)
+
+    # Mochila reciclagem
+    draw_rounded_rect(surf, (34,34,34), (px+7, py-1, 8, 12), 2)
+    recyc = font_recyc.render("R", True, (76,175,80))
+    surf.blit(recyc, (px+9, py+1))
+
+    # Cabeca
+    pygame.draw.circle(surf, (198,134,66), (px, py-15), 8)
+
+    # Bone
+    pygame.draw.ellipse(surf, (255,85,0), pygame.Rect(px-8, py-22, 17, 8))
+    pygame.draw.rect(surf, (255,85,0), (px-8, py-20, 17, 3))
+
+    # Simbolo de reciclagem no bone
+    cap_sym = font_recyc.render("R", True, (255,255,255))
+    surf.blit(cap_sym, (px-cap_sym.get_width()//2, py-21))
+
+    # Olhos e sorriso (quando olhando para frente)
+    if player["dir"] != 1:
+        pygame.draw.circle(surf, (17,17,17), (px-3, py-15), 2)
+        pygame.draw.circle(surf, (17,17,17), (px+3, py-15), 2)
+        pygame.draw.arc(surf, (17,17,17), pygame.Rect(px-3,py-14,6,4), 0, math.pi, 2)
+
+# -- HUD setas ----------------------------------------------------------------
+def draw_arrow_hud(surf, keys, font_arrow):
+    hx, hy = W-52, H-52
+    arrows = [("up","^",0,-18),("down","v",0,18),("left","<",-18,0),("right",">",18,0)]
+    for key, label, ox, oy in arrows:
+        pressed = keys.get(key, False)
+        s = pygame.Surface((22,22), pygame.SRCALPHA)
+        alpha_c = 242 if pressed else 35
+        col_c = (255,107,0) if pressed else (255,255,255)
+        pygame.draw.circle(s, (*col_c, alpha_c), (11,11), 11)
+        surf.blit(s, (hx+ox-11, hy+oy-11))
+        lbl = font_arrow.render(label, True, (255,255,255))
+        if not pressed: lbl.set_alpha(127)
+        surf.blit(lbl, (hx+ox-lbl.get_width()//2, hy+oy-lbl.get_height()//2))
+
+# -- HUD superior -------------------------------------------------------------
+def draw_hud(surf, score, time_left, level, map_name, font_title, font_hud):
+    for i in range(HUD_H):
+        frac = i/HUD_H
+        c = lerp_color((255,107,0),(255,140,0), frac)
+        pygame.draw.line(surf, c, (0,i),(W,i))
+    pygame.draw.rect(surf, (255,69,0), (0,0,W,HUD_H), 3)
+    draw_text_shadow(surf, f"AGENTE MANAUS - {map_name}", font_title, (255,255,255),(204,51,0), 12, 6)
+    badges = [(f"Pts: {score}", W-200),(f"Tempo: {time_left}s", W-130),(f"Nv.{level}", W-58)]
+    for text, x in badges:
+        tw = font_hud.size(text)[0]+20
+        draw_rounded_rect(surf, (0,0,0), (x-tw//2,5,tw,26), 13, 64)
+        draw_text(surf, text, font_hud, (255,255,255), x-tw//2+10, 10)
+
+# -- Mensagem central ---------------------------------------------------------
+def draw_message(surf, msg, font_msg):
+    if not msg: return
+    tw, th = font_msg.size(msg)
+    pad = 14
+    bw, bh = tw+pad*2, th+pad
+    bx = W//2 - bw//2
+    by = int(H*0.42) - bh//2
+    s = pygame.Surface((bw,bh), pygame.SRCALPHA)
+    pygame.draw.rect(s, (255,107,0,247),(0,0,bw,bh), border_radius=16)
+    pygame.draw.rect(s, (255,255,255,200),(0,0,bw,bh), 3, border_radius=16)
+    surf.blit(s, (bx,by))
+    draw_text_shadow(surf, msg, font_msg, (255,255,255),(204,51,0), bx+pad, by+pad//2)
+
+
+# ============================================================================
+# PREVIEW DO MAPA
+# ============================================================================
+def render_map_preview(map_data, width, height, map_id):
+    surf = pygame.Surface((width, height), pygame.SRCALPHA)
+    surf.fill((0, 0, 0, 0))
+
+    tile_w = width  / COLS
+    tile_h = height / ROWS
+
+    for r in range(ROWS):
+        for c in range(COLS):
+            cell = map_data[r][c]
+            base_col = TILE_COLORS.get(cell, (80, 80, 80))
+
+            px = int(c * tile_w)
+            py = int(r * tile_h)
+            pw = max(int(tile_w) - 1, 1)
+            ph = max(int(tile_h) - 1, 1)
+
+            brightness = 1.0 + 0.08 * ((c + r) % 2)
+            col = tuple(min(255, int(v * brightness)) for v in base_col)
+            pygame.draw.rect(surf, col, (px, py, pw, ph))
+
+            if cell in (2, 5):
+                wc = (255, 250, 180) if random.random() > 0.4 else (30, 40, 70)
+                for wx in range(1, 3):
+                    for wy in range(1, 2):
+                        pygame.draw.rect(surf, wc,
+                                         (px + wx * int(pw/3), py + wy * int(ph/3),
+                                          max(1, int(pw/4)), max(1, int(ph/4))))
+            elif cell == 3:
+                pygame.draw.circle(surf, (50, 200, 80),
+                                   (px + pw//2, py + ph//2), max(2, min(pw, ph)//3))
+            elif cell == 4:
+                pygame.draw.rect(surf, (200, 160, 60), (px+1, py+1, pw-2, ph-2))
+            elif cell == 6:
+                pygame.draw.circle(surf, (150, 220, 90),
+                                   (px + pw//2, py + ph//2), max(1, min(pw, ph)//4))
+
+    mask = pygame.Surface((width, height), pygame.SRCALPHA)
+    mask.fill((0, 0, 0, 0))
+    pygame.draw.rect(mask, (255, 255, 255, 255), (0, 0, width, height), border_radius=10)
+    surf.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
+    return surf
+
+_preview_cache = {}
+def get_map_preview(map_id, width, height):
+    key = (map_id, width, height)
+    if key not in _preview_cache:
+        _preview_cache[key] = render_map_preview(MAPS[map_id]["data"], width, height, map_id)
+    return _preview_cache[key]
+
+
+# ============================================================================
+# CARD DE MAPA
+# ============================================================================
+def draw_map_card(surf, map_id, cx, cy, card_w, card_h, selected, t, fonts):
+    theme   = MAP_THEMES[map_id]
+    mdata   = MAPS[map_id]
+    radius  = 16
+
+    preview_w = card_w - 16
+    preview_h = int(card_h * 0.48)
+
+    # Glow quando selecionado
+    if selected:
+        pulse = 0.5 + 0.5 * math.sin(t * 3.5)
+        glow_alpha = int(50 + 40 * pulse)
+        glow_size  = int(10 + 4 * pulse)
+        draw_glow_rect(surf, theme["sel"],
+                       (cx, cy, card_w, card_h),
+                       radius, glow_size, glow_alpha)
+
+    # Fundo gradiente
+    draw_gradient_rect(surf, theme["top"], theme["bot"],
+                       (cx, cy, card_w, card_h), radius)
+
+    # Borda
+    border_col = theme["sel"] if selected else theme["border"]
+    border_w   = 2 if selected else 1
+    pygame.draw.rect(surf, border_col,
+                     (cx, cy, card_w, card_h),
+                     border_w, border_radius=radius)
+
+    # Preview do mapa
+    preview = get_map_preview(map_id, preview_w, preview_h)
+    preview_x = cx + 8
+    preview_y = cy + 8
+
+    shadow_s = pygame.Surface((preview_w + 4, preview_h + 4), pygame.SRCALPHA)
+    pygame.draw.rect(shadow_s, (0, 0, 0, 60), (0, 0, preview_w + 4, preview_h + 4),
+                     border_radius=12)
+    surf.blit(shadow_s, (preview_x - 2, preview_y + 2))
+    surf.blit(preview, (preview_x, preview_y))
+
+    pygame.draw.rect(surf, (*theme["border"], 180),
+                     (preview_x, preview_y, preview_w, preview_h),
+                     1, border_radius=10)
+
+    # Separador decorativo
+    sep_y = preview_y + preview_h + 6
+    for xi in range(cx + 8, cx + card_w - 8, 3):
+        alpha = int(80 * math.sin(math.pi * (xi - cx - 8) / (card_w - 16)))
+        pygame.draw.line(surf, (*theme["sel"], alpha),
+                         (xi, sep_y), (xi + 2, sep_y), 1)
+
+    # Textos
+    text_y = sep_y + 8
+    name_surf = fonts["card_name"].render(mdata["name"], True, theme["accent"])
+    surf.blit(name_surf, (cx + 8, text_y))
+
+    desc = mdata["desc"]
+    max_chars = 22
+    desc_y = text_y + 16
+    desc_line1 = desc[:max_chars]
+    desc_surf = fonts["card_desc"].render(desc_line1, True, (180, 170, 210))
+    surf.blit(desc_surf, (cx + 8, desc_y))
+    if len(desc) > max_chars:
+        desc_line2 = desc[max_chars:max_chars*2]
+        if len(desc) > max_chars * 2:
+            desc_line2 += "..."
+        desc2_surf = fonts["card_desc"].render(desc_line2, True, (150, 140, 180))
+        surf.blit(desc2_surf, (cx + 8, desc_y + 12))
+
+    # Tecla de atalho
+    key_y = cy + card_h - 18
+    key_bg = pygame.Surface((52, 14), pygame.SRCALPHA)
+    pygame.draw.rect(key_bg, (0, 0, 0, 100), (0, 0, 52, 14), border_radius=5)
+    surf.blit(key_bg, (cx + 8, key_y))
+    key_col = theme["sel"] if selected else (120, 110, 160)
+    key_surf = fonts["card_desc"].render(f"Tecla [{map_id}]", True, key_col)
+    surf.blit(key_surf, (cx + 10, key_y + 2))
+
+    # Badge numero
+    badge_r  = 13
+    badge_cx = cx + card_w - badge_r - 6
+    badge_cy = cy + badge_r + 6
+    badge_bg = pygame.Surface((badge_r*2, badge_r*2), pygame.SRCALPHA)
+    pygame.draw.circle(badge_bg, (*theme["sel"], 220 if selected else 160),
+                       (badge_r, badge_r), badge_r)
+    pygame.draw.circle(badge_bg, (255, 255, 255, 60), (badge_r, badge_r), badge_r - 2, 1)
+    surf.blit(badge_bg, (badge_cx - badge_r, badge_cy - badge_r))
+    num_col = (20, 15, 10) if selected else (200, 190, 230)
+    num_surf = fonts["hud"].render(str(map_id), True, num_col)
+    surf.blit(num_surf, (badge_cx - num_surf.get_width()//2,
+                          badge_cy - num_surf.get_height()//2))
+
+    # Highlight interno
+    draw_inner_highlight(surf, (cx, cy, card_w, card_h), radius, alpha=35)
+
+    # Icone tematico no preview
+    icon_surf = fonts["card_name"].render(theme["icon"], True, (255, 255, 255))
+    icon_x = preview_x + preview_w - icon_surf.get_width() - 4
+    icon_y = preview_y + preview_h - icon_surf.get_height() - 2
+    icon_bg = pygame.Surface((icon_surf.get_width() + 6, icon_surf.get_height() + 4),
+                              pygame.SRCALPHA)
+    pygame.draw.rect(icon_bg, (0, 0, 0, 120),
+                     (0, 0, icon_bg.get_width(), icon_bg.get_height()), border_radius=6)
+    surf.blit(icon_bg, (icon_x - 3, icon_y - 2))
+    surf.blit(icon_surf, (icon_x, icon_y))
+
+    return pygame.Rect(cx, cy, card_w, card_h)
+
+
+# ============================================================================
+# TELA INICIAL
+# ============================================================================
+class TelaCinicial:
+    def __init__(self, screen, fonts, scale=1.0):
+        self.screen = screen
+        self.f      = fonts
+        self._scale = scale
+        self.selected_map = 1
+        self.t_start = time.time()
+        self.particles = [
+            {"x": random.uniform(0, W+HUD_H),
+             "y": random.uniform(0, H+HUD_H),
+             "vx": random.uniform(-20, 20),
+             "vy": random.uniform(-30, -10),
+             "life": random.uniform(0, 3),
+             "icon": random.choice(["[P]","[C]","[L]","[V]","[Pa]","[E]"])}
+            for _ in range(18)
+        ]
+        self.map_rects = {}
+        for mid in MAPS:
+            get_map_preview(mid, 152, 72)
+
+    def update(self, dt):
+        for p in self.particles:
+            p["x"] += p["vx"] * dt
+            p["y"] += p["vy"] * dt
+            p["life"] -= dt
+            if p["life"] <= 0:
+                p["x"] = random.uniform(0, W)
+                p["y"] = H + HUD_H + 20
+                p["vy"] = random.uniform(-30, -10)
+                p["vx"] = random.uniform(-20, 20)
+                p["life"] = random.uniform(2, 5)
+
+    def handle_event(self, event):
+        if event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_1: self.selected_map = 1
+            if event.key == pygame.K_2: self.selected_map = 2
+            if event.key == pygame.K_3: self.selected_map = 3
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE):
+                return "start"
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Converte coordenadas do mouse (janela escalada) para coordenadas do canvas
+            mx = int(event.pos[0] / self._scale) if hasattr(self, "_scale") else event.pos[0]
+            my = int(event.pos[1] / self._scale) if hasattr(self, "_scale") else event.pos[1]
+            scaled_pos = (mx, my)
+            for mid, rect in self.map_rects.items():
+                if rect.collidepoint(scaled_pos):
+                    self.selected_map = mid
+            if hasattr(self, "btn_rect") and self.btn_rect.collidepoint(scaled_pos):
+                return "start"
+        return None
+
+    def draw(self):
+        t    = time.time() - self.t_start
+        surf = self.screen
+
+        # Fundo gradiente noturno Manaus
+        for i in range(H+HUD_H):
+            frac = i/(H+HUD_H)
+            c = lerp_color((10,8,40),(30,20,80), frac)
+            pygame.draw.line(surf, c, (0,i),(W,i))
+
+        # Estrelas
+        random.seed(42)
+        for _ in range(60):
+            sx = random.randint(0,W)
+            sy = random.randint(0, (H+HUD_H)//2)
+            alpha = int(128 + 127*math.sin(t*1.5 + random.uniform(0,6)))
+            s2 = pygame.Surface((3,3), pygame.SRCALPHA)
+            pygame.draw.circle(s2, (255,255,220,alpha),(1,1),1)
+            surf.blit(s2, (sx,sy))
+        random.seed()
+
+        # Particulas de lixo flutuando (texto simples)
+        for p in self.particles:
+            alpha = max(0, min(255, int(p["life"]/5 * 200)))
+            if alpha > 0:
+                ico = self.f["card_name"].render(p["icon"], True, (200,200,200))
+                ico.set_alpha(alpha)
+                surf.blit(ico, (int(p["x"]), int(p["y"])))
+
+        # Rio Negro ao fundo
+        pts = []
+        for xi in range(0, W+1, 10):
+            wave = math.sin(xi*0.03 + t*0.8)*8 + math.sin(xi*0.07 + t*0.5)*4
+            pts.append((xi, int((H+HUD_H)*0.70 + wave)))
+        pts.append((W, H+HUD_H))
+        pts.append((0, H+HUD_H))
+        pygame.draw.polygon(surf, (10,30,80), pts)
+        for xi in range(0, W, 4):
+            wave = math.sin(xi*0.04 + t*1.2)*5
+            py_ = int((H+HUD_H)*0.72 + wave)
+            s2  = pygame.Surface((3,3), pygame.SRCALPHA)
+            pygame.draw.circle(s2, (100,160,255,60),(1,1),1)
+            surf.blit(s2, (xi, py_))
+
+        # Silhueta predios
+        bldg_h = [180,140,200,120,160,110,190,150,170,130,200,140,160,120,180]
+        for bi, bh in enumerate(bldg_h):
+            bx_ = bi*40
+            by_ = int((H+HUD_H)*0.70) - bh
+            pygame.draw.rect(surf, (15,15,50), (bx_, by_, 36, bh))
+            for wi_ in range(3):
+                for hi_ in range(bh//20):
+                    lit = math.sin(t*0.5 + bi*1.3 + wi_*2.1 + hi_*0.7) > 0.3
+                    wc = (255,240,150) if lit else (20,20,50)
+                    pygame.draw.rect(surf, wc, (bx_+4+wi_*11, by_+6+hi_*18, 8, 10))
+
+        # Titulo principal
+        title_font = self.f["title_big"]
+        draw_text_shadow(surf, "AGENTE MANAUS", title_font,
+                         (255,200,50),(180,60,0), W//2, int((H+HUD_H)*0.12), center=True)
+
+        sub = self.f["subtitle"]
+        draw_text(surf, "Colete o lixo e salve a cidade!", sub,
+                  (200,230,255), W//2, int((H+HUD_H)*0.22), center=True)
+
+        # Cards de selecao de mapa
+        card_y   = int((H+HUD_H)*0.30)
+        card_w   = 172
+        card_h   = 168
+        gap      = 14
+        total_w  = 3*card_w + 2*gap
+        start_x  = W//2 - total_w//2
+
+        self.map_rects = {}
+        for mi, map_id in enumerate(MAPS.keys()):
+            cx_ = start_x + mi*(card_w+gap)
+            selected = (self.selected_map == map_id)
+            rect = draw_map_card(surf, map_id, cx_, card_y, card_w, card_h,
+                                 selected, t, self.f)
+            self.map_rects[map_id] = rect
+
+        # Descricao do mapa selecionado
+        sel = MAPS[self.selected_map]
+        desc_y = card_y + card_h + 12
+        desc_full = self.f["subtitle"].render(
+            f"{sel['name']} -- {sel['desc']}", True, (200,220,255))
+        surf.blit(desc_full, (W//2 - desc_full.get_width()//2, desc_y))
+
+        # Instrucoes
+        inst_y = desc_y + 26
+        inst_lines = [
+            "Setas: Mover  |  Colete lixo antes do tempo acabar!",
+            "Cada nivel  ->  mais lixo  +  15 segundos extras",
+        ]
+        for il, line in enumerate(inst_lines):
+            ls = self.f["card_desc"].render(line, True, (160,180,220))
+            surf.blit(ls, (W//2 - ls.get_width()//2, inst_y + il*16))
+
+        # Botao JOGAR
+        btn_y   = inst_y + 42
+        btn_w   = 200
+        btn_h   = 44
+        btn_x   = W//2 - btn_w//2
+        btn_col = lerp_color((230,80,0),(255,130,0), 0.5 + 0.5*math.sin(t*2))
+
+        btn_glow = pygame.Surface((btn_w + 20, btn_h + 20), pygame.SRCALPHA)
+        glow_col = lerp_color((255,100,0),(255,180,0), 0.5+0.5*math.sin(t*2))
+        pygame.draw.rect(btn_glow, (*glow_col, 40),
+                         (0, 0, btn_w + 20, btn_h + 20), border_radius=30)
+        surf.blit(btn_glow, (btn_x - 10, btn_y - 10))
+
+        draw_gradient_rect(surf, btn_col,
+                           lerp_color(btn_col, (180,40,0), 0.4),
+                           (btn_x, btn_y, btn_w, btn_h), 22)
+        pygame.draw.rect(surf, (255,220,100),(btn_x,btn_y,btn_w,btn_h), 2, border_radius=22)
+        draw_inner_highlight(surf, (btn_x, btn_y, btn_w, btn_h), 22, alpha=60)
+
+        btn_s = self.f["btn"].render(">> JOGAR", True, (255,255,255))
+        surf.blit(btn_s, (W//2 - btn_s.get_width()//2, btn_y + btn_h//2 - btn_s.get_height()//2))
+        self.btn_rect = pygame.Rect(btn_x, btn_y, btn_w, btn_h)
+
+        # Rodape
+        foot = self.f["card_desc"].render("Manaus, Amazonas -- Jogue limpo!", True, (100,140,180))
+        surf.blit(foot, (W//2 - foot.get_width()//2, H+HUD_H - 22))
+
+
+# ============================================================================
+# JOGO PRINCIPAL
+# ============================================================================
+class AgenteManaus:
+    def __init__(self):
+        pygame.init()
+        pygame.display.set_caption("Agente Manaus")
+
+        # Detecta resolucao real da tela e desconta a barra de tarefas do Windows
+        info = pygame.display.Info()
+        TASKBAR_H = 48  # altura tipica da barra de tarefas do Windows
+        WIN_W = info.current_w
+        WIN_H = info.current_h - TASKBAR_H
+
+        # Calcula escala mantendo proporcao do jogo (600 x 436)
+        GAME_W = W
+        GAME_H = H + HUD_H
+        scale_x = WIN_W / GAME_W
+        scale_y = WIN_H / GAME_H
+        self.scale = min(scale_x, scale_y)
+
+        # Tamanho final da janela
+        self.win_w = int(GAME_W * self.scale)
+        self.win_h = int(GAME_H * self.scale)
+
+        self.screen = pygame.display.set_mode((self.win_w, self.win_h))
+
+        # Surface interna no tamanho original — tudo e desenhado aqui, depois escalado
+        self.game_canvas = pygame.Surface((GAME_W, GAME_H))
+
+        self.clock = pygame.time.Clock()
+
+        self.fonts = {
+            "emoji_lg":   pygame.font.SysFont("Arial", 22),
+            "emoji_sm":   pygame.font.SysFont("Arial", 16),
+            "emoji_xs":   pygame.font.SysFont("Arial", 12),
+            "title":      pygame.font.SysFont("Arial Black", 18, bold=True),
+            "title_big":  pygame.font.SysFont("Arial Black", 30, bold=True),
+            "subtitle":   pygame.font.SysFont("Arial", 13),
+            "hud":        pygame.font.SysFont("Arial", 13, bold=True),
+            "msg":        pygame.font.SysFont("Arial Black", 22, bold=True),
+            "pts":        pygame.font.SysFont("Arial", 9, bold=True),
+            "pts_big":    pygame.font.SysFont("Arial", 14, bold=True),
+            "badge":      pygame.font.SysFont("Arial", 6, bold=True),
+            "recyc":      pygame.font.SysFont("Arial", 9, bold=True),
+            "arrow":      pygame.font.SysFont("Arial", 11, bold=True),
+            "card_name":  pygame.font.SysFont("Arial", 11, bold=True),
+            "card_desc":  pygame.font.SysFont("Arial", 9),
+            "btn":        pygame.font.SysFont("Arial Black", 20, bold=True),
         }
-      }
 
-      // Move
-      let dx = 0, dy = 0;
-      if (s.keys.ArrowLeft)  { dx = -1; s.player.dir = 2; }
-      if (s.keys.ArrowRight) { dx =  1; s.player.dir = 3; }
-      if (s.keys.ArrowUp)    { dy = -1; s.player.dir = 1; }
-      if (s.keys.ArrowDown)  { dy =  1; s.player.dir = 0; }
-      const len = Math.sqrt(dx*dx + dy*dy);
-      s.player.moving = len > 0;
-      if (s.player.moving) {
-        const spd = 3.8;
-        const nx = s.player.x + dx / len * spd * dt;
-        const ny = s.player.y + dy / len * spd * dt;
-        if (walkable(nx, s.player.y)) s.player.x = nx;
-        if (walkable(s.player.x, ny)) s.player.y = ny;
-        s.player.x = Math.max(0.5, Math.min(COLS - 0.5, s.player.x));
-        s.player.y = Math.max(0.5, Math.min(ROWS - 0.5, s.player.y));
-      }
+        self.state    = "intro"
+        self.map_id   = 1
+        self.intro    = TelaCinicial(self.game_canvas, self.fonts, self.scale)
+        self.game_data = None
 
-      // Collect
-      s.items.forEach(it => {
-        if (it.collected) return;
-        const ddx = s.player.x - it.x, ddy = s.player.y - it.y;
-        if (Math.sqrt(ddx*ddx + ddy*ddy) < 0.9) {
-          it.collected = true;
-          s.score += it.pts;
-          s.collectAnims.push({ ...it, start: t });
-          s.msg = `${it.icon} ${it.label}! +${it.pts}pts`;
-          s.msgUntil = ts + 900;
-          if (s.items.every(i => i.collected)) {
-            s.level++;
-            s.timeLeft = Math.min(s.timeLeft + 15, 90);
-            s.msg = `🎉 NÍVEL ${s.level}! +15s`;
-            s.msgUntil = ts + 1600;
-            setTimeout(() => { s.items = spawnItems(s.level); }, 600);
-          }
+    def start_game(self, map_id):
+        self.map_id   = map_id
+        mdata = MAPS[map_id]["data"]
+        self.game_data = {
+            "player":         {"x": 7.5, "y": 4.5, "dir": 0, "moving": False},
+            "items":          spawn_items(1, mdata),
+            "collect_anims":  [],
+            "keys":           {"up":False,"down":False,"left":False,"right":False},
+            "score":          0,
+            "time_left":      60.0,
+            "level":          1,
+            "timer_acc":      0.0,
+            "game_over":      False,
+            "bldg_cache":     make_bldg_cache(mdata),
+            "msg":            f"AGENTE MANAUS - {MAPS[map_id]['name']} - Colete o lixo!",
+            "msg_until":      time.time() + 2.2,
+            "next_spawn":     None,
         }
-      });
-      s.collectAnims = s.collectAnims.filter(a => t - a.start < 0.85);
-    }
 
-    // Render
-    const canvas = canvasRef.current;
-    if (!canvas) { rafRef.current = requestAnimationFrame(loop); return; }
-    const ctx = canvas.getContext("2d");
-    ctx.clearRect(0, 0, W, H);
+    def handle_events(self):
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                return False
 
-    // MAP
-    for (let r = 0; r < ROWS; r++) {
-      for (let c = 0; c < COLS; c++) {
-        const cell = MAP[r]?.[c] ?? 2;
-        ctx.fillStyle = TILE_COLORS[cell] || "#555";
-        ctx.fillRect(c*TILE, r*TILE, TILE, TILE);
-        if (cell === 2) {
-          const k = `${c},${r}`;
-          const bd = s.bldgCache[k];
-          if (bd) {
-            ctx.fillStyle = bd.col;
-            ctx.fillRect(c*TILE+2, r*TILE+2, TILE-4, TILE-4);
-            bd.wins.forEach(w => {
-              ctx.fillStyle = w.lit ? "#fffde7" : "#33334a";
-              ctx.fillRect(c*TILE+5+w.cx*11, r*TILE+5+w.cy*14, 8, 9);
-            });
-          }
-        } else if (cell === 0) {
-          ctx.save();
-          ctx.setLineDash([6,6]);
-          ctx.strokeStyle = "rgba(255,255,200,0.12)";
-          ctx.lineWidth = 1.5;
-          if (r === 4 || r === 9) {
-            ctx.beginPath(); ctx.moveTo(c*TILE, r*TILE+TILE/2); ctx.lineTo((c+1)*TILE, r*TILE+TILE/2); ctx.stroke();
-          }
-          if (c >= 6 && c <= 9) {
-            ctx.beginPath(); ctx.moveTo(c*TILE+TILE/2, r*TILE); ctx.lineTo(c*TILE+TILE/2, (r+1)*TILE); ctx.stroke();
-          }
-          ctx.restore();
-        } else if (cell === 3) {
-          ctx.font = "22px serif";
-          ctx.fillText("🌳", c*TILE+8, r*TILE+30);
-        } else if (cell === 1) {
-          ctx.strokeStyle = "rgba(0,0,0,0.1)";
-          ctx.lineWidth = 0.5;
-          for (let i = 1; i < 4; i++) {
-            ctx.beginPath(); ctx.moveTo(c*TILE, r*TILE+i*10); ctx.lineTo((c+1)*TILE, r*TILE+i*10); ctx.stroke();
-          }
-        }
-      }
-    }
+            if self.state == "intro":
+                result = self.intro.handle_event(event)
+                if result == "start":
+                    self.start_game(self.intro.selected_map)
+                    self.state = "game"
 
-    // Items
-    s.items.forEach(it => {
-      if (it.collected) return;
-      const bob = Math.sin(t*3 + it.bob)*3;
-      const sx = it.x*TILE-12, sy = it.y*TILE-14+bob;
-      ctx.save();
-      ctx.shadowBlur = 18; ctx.shadowColor = it.color;
-      ctx.font = "22px serif";
-      ctx.fillText(it.icon, sx, sy+18);
-      ctx.restore();
-      ctx.fillStyle = "rgba(0,0,0,0.65)";
-      ctx.beginPath(); ctx.roundRect(sx+2, sy+18, 24, 13, 4); ctx.fill();
-      ctx.fillStyle = "#fff";
-      ctx.font = "bold 8px sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText(`+${it.pts}`, sx+4, sy+29);
-    });
+            elif self.state == "game":
+                gd = self.game_data
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_UP:    gd["keys"]["up"]    = True
+                    if event.key == pygame.K_DOWN:  gd["keys"]["down"]  = True
+                    if event.key == pygame.K_LEFT:  gd["keys"]["left"]  = True
+                    if event.key == pygame.K_RIGHT: gd["keys"]["right"] = True
+                    if event.key == pygame.K_r and gd["game_over"]:
+                        self.state = "intro"
+                        self.intro  = TelaCinicial(self.game_canvas, self.fonts, self.scale)
+                    if event.key == pygame.K_ESCAPE:
+                        self.state = "intro"
+                        self.intro  = TelaCinicial(self.game_canvas, self.fonts, self.scale)
+                if event.type == pygame.KEYUP:
+                    if event.key == pygame.K_UP:    gd["keys"]["up"]    = False
+                    if event.key == pygame.K_DOWN:  gd["keys"]["down"]  = False
+                    if event.key == pygame.K_LEFT:  gd["keys"]["left"]  = False
+                    if event.key == pygame.K_RIGHT: gd["keys"]["right"] = False
+        return True
 
-    // Collect anims
-    s.collectAnims.forEach(a => {
-      const p = (t - a.start) / 0.85;
-      ctx.save();
-      ctx.globalAlpha = 1 - p;
-      ctx.font = `${20+p*8}px serif`;
-      ctx.fillText(a.icon, a.x*TILE-12, a.y*TILE-22-p*32);
-      ctx.fillStyle = "#ffd700";
-      ctx.font = `bold ${13+p*4}px sans-serif`;
-      ctx.textAlign = "left";
-      ctx.fillText(`+${a.pts}`, a.x*TILE+6, a.y*TILE-22-p*32);
-      ctx.restore();
-    });
+    def update(self, dt):
+        t  = time.time()
+        if self.state == "intro":
+            self.intro.update(dt)
+            return
 
-    // Player
-    const px = s.player.x * TILE, py = s.player.y * TILE;
-    const legSwing = s.player.moving ? Math.sin(t*10)*5 : 0;
-    ctx.save();
-    ctx.translate(px, py);
-    // Shadow
-    ctx.fillStyle = "rgba(0,0,0,0.28)";
-    ctx.beginPath(); ctx.ellipse(0,15,10,4,0,0,Math.PI*2); ctx.fill();
-    // Legs
-    ctx.fillStyle = "#e65c00";
-    ctx.fillRect(-6,4,5,11+legSwing); ctx.fillRect(1,4,5,11-legSwing);
-    ctx.fillStyle = "#1a1a1a";
-    ctx.fillRect(-7,13,7,5); ctx.fillRect(0,13,7,5);
-    // Body
-    const g = ctx.createLinearGradient(-9,-8,9,8);
-    g.addColorStop(0,"#ff8c00"); g.addColorStop(1,"#ff5500");
-    ctx.fillStyle = g;
-    ctx.beginPath(); ctx.roundRect(-9,-8,18,16,3); ctx.fill();
-    // Stripes
-    ctx.fillStyle = "rgba(255,255,150,0.88)";
-    ctx.fillRect(-8,-1,16,3); ctx.fillRect(-8,5,16,3);
-    ctx.fillStyle = "rgba(0,0,0,0.75)";
-    ctx.font = "bold 4px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("MANAUS", 0, 3);
-    // Arms & gloves
-    ctx.fillStyle = "#e65c00";
-    ctx.fillRect(-14,-5,6,4); ctx.fillRect(8,-5,6,4);
-    ctx.fillStyle = "#ffd700";
-    ctx.beginPath(); ctx.arc(-14,-3,4,0,Math.PI*2); ctx.fill();
-    ctx.beginPath(); ctx.arc(14,-3,4,0,Math.PI*2); ctx.fill();
-    // Bag
-    ctx.fillStyle = "#222";
-    ctx.beginPath(); ctx.roundRect(7,-1,8,12,2); ctx.fill();
-    ctx.fillStyle = "#4caf50"; ctx.font = "8px serif";
-    ctx.fillText("♻",8,9);
-    // Head
-    ctx.fillStyle = "#c68642";
-    ctx.beginPath(); ctx.arc(0,-15,8,0,Math.PI*2); ctx.fill();
-    ctx.fillStyle = "#1a0a00";
-    ctx.beginPath(); ctx.arc(0,-20,7,Math.PI,0); ctx.fill();
-    ctx.fillStyle = "#ff5500";
-    ctx.beginPath(); ctx.arc(0,-20,7.5,Math.PI,0); ctx.fill();
-    ctx.fillRect(-8,-20,17,3);
-    ctx.fillStyle = "#fff"; ctx.font = "bold 5px sans-serif"; ctx.textAlign = "center";
-    ctx.fillText("♻", 0, -18);
-    if (s.player.dir !== 1) {
-      ctx.fillStyle = "#111";
-      ctx.beginPath(); ctx.arc(-3,-15,1.5,0,Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(3,-15,1.5,0,Math.PI*2); ctx.fill();
-      ctx.strokeStyle = "#111"; ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.arc(0,-13,3,0.1,Math.PI-0.1); ctx.stroke();
-    }
-    ctx.restore();
+        gd    = self.game_data
+        mdata = MAPS[self.map_id]["data"]
+        if gd["game_over"]: return
 
-    // Arrow HUD (Makey Makey feedback)
-    const hx = W - 52, hy = H - 52;
-    [
-      { key:"ArrowUp",    label:"▲", ox:0,   oy:-18 },
-      { key:"ArrowDown",  label:"▼", ox:0,   oy:18  },
-      { key:"ArrowLeft",  label:"◀", ox:-18, oy:0   },
-      { key:"ArrowRight", label:"▶", ox:18,  oy:0   },
-    ].forEach(d => {
-      ctx.fillStyle = s.keys[d.key] ? "rgba(255,107,0,0.95)" : "rgba(255,255,255,0.14)";
-      ctx.beginPath(); ctx.arc(hx+d.ox, hy+d.oy, 10, 0, Math.PI*2); ctx.fill();
-      ctx.fillStyle = s.keys[d.key] ? "#fff" : "rgba(255,255,255,0.5)";
-      ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center";
-      ctx.fillText(d.label, hx+d.ox, hy+d.oy+4);
-    });
+        if gd["next_spawn"] and t >= gd["next_spawn"]:
+            gd["items"]       = spawn_items(gd["level"], mdata)
+            gd["next_spawn"]  = None
 
-    // Low time flash
-    if (s.timeLeft <= 10 && !s.gameOver) {
-      ctx.fillStyle = `rgba(255,0,0,${0.1+0.08*Math.sin(t*8)})`;
-      ctx.fillRect(0,0,W,H);
-    }
+        gd["timer_acc"] += dt
+        if gd["timer_acc"] >= 1.0:
+            gd["timer_acc"] -= 1.0
+            gd["time_left"] -= 1
+            if gd["time_left"] <= 0:
+                gd["time_left"]  = 0
+                gd["game_over"]  = True
+                gd["msg"]        = f"FIM! {gd['score']} pts! R=menu"
+                gd["msg_until"]  = float("inf")
 
-    // Sync UI
-    setUi({ score: s.score, timeLeft: s.timeLeft, level: s.level, gameOver: s.gameOver,
-      msg: ts < s.msgUntil ? s.msg : "" });
+        dx, dy = 0, 0
+        keys = gd["keys"]
+        pl   = gd["player"]
+        if keys["left"]:  dx=-1; pl["dir"]=2
+        if keys["right"]: dx= 1; pl["dir"]=3
+        if keys["up"]:    dy=-1; pl["dir"]=1
+        if keys["down"]:  dy= 1; pl["dir"]=0
+        length = math.sqrt(dx*dx + dy*dy)
+        pl["moving"] = length > 0
+        if pl["moving"]:
+            spd = 3.8
+            nx = pl["x"] + dx/length * spd * dt
+            ny = pl["y"] + dy/length * spd * dt
+            if walkable(mdata, nx, pl["y"]): pl["x"] = nx
+            if walkable(mdata, pl["x"], ny): pl["y"] = ny
+            pl["x"] = max(0.5, min(COLS-0.5, pl["x"]))
+            pl["y"] = max(0.5, min(ROWS-0.5, pl["y"]))
 
-    rafRef.current = requestAnimationFrame(loop);
-  }, []);
+        for it in gd["items"]:
+            if it["collected"]: continue
+            ddx = pl["x"] - it["x"]
+            ddy = pl["y"] - it["y"]
+            if math.sqrt(ddx*ddx + ddy*ddy) < 0.9:
+                it["collected"] = True
+                gd["score"]    += it["pts"]
+                gd["collect_anims"].append({**it, "start": t})
+                gd["msg"]       = f"{it['label']}! +{it['pts']}pts"
+                gd["msg_until"] = t + 0.9
+                if all(i["collected"] for i in gd["items"]):
+                    gd["level"]      += 1
+                    gd["time_left"]   = min(gd["time_left"]+15, 90)
+                    gd["msg"]         = f"NIVEL {gd['level']}! +15s"
+                    gd["msg_until"]   = t + 1.6
+                    gd["next_spawn"]  = t + 0.6
 
-  useEffect(() => {
-    rafRef.current = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(rafRef.current);
-  }, [loop]);
+        gd["collect_anims"] = [a for a in gd["collect_anims"] if t-a["start"] < 0.85]
 
-  // D-pad helpers
-  const dpadPress = (key) => { stateRef.current.keys[key] = true; };
-  const dpadRelease = (key) => { stateRef.current.keys[key] = false; };
+    def draw(self):
+        t = time.time()
 
-  const DBtn = ({ dir, label, key }) => (
-    <button
-      style={{
-        width:44, height:44, borderRadius:10, fontSize:18, cursor:"pointer",
-        background: "rgba(255,107,0,0.18)", border:"2px solid #ff6b00",
-        color:"#ff8c00", display:"flex", alignItems:"center", justifyContent:"center",
-        touchAction:"none", WebkitTapHighlightColor:"transparent",
-        transition:"background 0.1s",
-      }}
-      onMouseDown={() => dpadPress(key)}
-      onMouseUp={() => dpadRelease(key)}
-      onMouseLeave={() => dpadRelease(key)}
-      onTouchStart={(e) => { dpadPress(key); e.preventDefault(); }}
-      onTouchEnd={() => dpadRelease(key)}
-    >{label}</button>
-  );
+        if self.state == "intro":
+            self.intro.draw()
+            # Escala o canvas para a janela e exibe
+            scaled = pygame.transform.scale(self.game_canvas, (self.win_w, self.win_h))
+            self.screen.blit(scaled, (0, 0))
+            pygame.display.flip()
+            return
 
-  return (
-    <div style={{
-      minHeight:"100vh", background:"#12122a",
-      display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center",
-      fontFamily:"'Nunito', 'Segoe UI', sans-serif",
-    }}>
-      {/* HUD */}
-      <div style={{
-        width:W, display:"flex", justifyContent:"space-between", alignItems:"center",
-        padding:"8px 16px",
-        background:"linear-gradient(90deg,#ff6b00,#ff8c00)",
-        borderRadius:"12px 12px 0 0", border:"3px solid #ff4500", borderBottom:"none",
-      }}>
-        <span style={{ fontFamily:"'Bangers','Impact',cursive", fontSize:22, color:"#fff",
-          letterSpacing:2, textShadow:"2px 2px 0 #cc3300" }}>
-          ♻️ AGENTE MANAUS
-        </span>
-        <div style={{ display:"flex", gap:10 }}>
-          {[
-            { icon:"📦", val: ui.score },
-            { icon:"⏱️", val: `${ui.timeLeft}s` },
-            { icon:"🏆", val: `Nv.${ui.level}` },
-          ].map(s => (
-            <div key={s.icon} style={{
-              background:"rgba(0,0,0,0.25)", padding:"4px 10px",
-              borderRadius:20, color:"#fff", fontWeight:900, fontSize:13,
-              display:"flex", alignItems:"center", gap:5
-            }}>
-              {s.icon} {s.val}
-            </div>
-          ))}
-        </div>
-      </div>
+        gd    = self.game_data
+        mdata = MAPS[self.map_id]["data"]
+        f     = self.fonts
 
-      {/* Canvas */}
-      <div style={{ position:"relative" }}>
-        <canvas ref={canvasRef} width={W} height={H}
-          style={{ border:"3px solid #ff4500", borderTop:"none",
-            borderRadius:"0 0 12px 12px", display:"block", imageRendering:"pixelated" }} />
+        game_surf = pygame.Surface((W, H))
+        draw_map(game_surf, self.map_id, mdata, gd["bldg_cache"], t,
+                 f["emoji_lg"], f["emoji_lg"], f["emoji_lg"])
+        draw_items(game_surf, gd["items"], t, f["emoji_lg"], f["pts"])
+        draw_collect_anims(game_surf, gd["collect_anims"], t, f["emoji_lg"], f["pts_big"])
+        draw_player(game_surf, gd["player"], t, f["badge"], f["recyc"])
+        draw_arrow_hud(game_surf, gd["keys"], f["arrow"])
 
-        {/* Message overlay */}
-        {ui.msg && (
-          <div style={{
-            position:"absolute", top:"42%", left:"50%", transform:"translate(-50%,-50%)",
-            background:"rgba(255,107,0,0.97)", color:"#fff",
-            fontFamily:"'Bangers','Impact',cursive", fontSize:26,
-            padding:"12px 28px", borderRadius:16, border:"3px solid #fff",
-            pointerEvents:"none", textShadow:"2px 2px 0 #cc3300",
-            whiteSpace:"nowrap", zIndex:10,
-          }}>
-            {ui.msg}
-          </div>
-        )}
-      </div>
+        # Flash vermelho quando tempo esta acabando
+        if gd["time_left"] <= 10 and not gd["game_over"]:
+            fa = int((0.1 + 0.08*math.sin(t*8))*255)
+            flash = pygame.Surface((W,H), pygame.SRCALPHA)
+            flash.fill((255,0,0,fa))
+            game_surf.blit(flash, (0,0))
 
-      {/* D-Pad + Info */}
-      <div style={{ marginTop:10, display:"flex", alignItems:"center", gap:24 }}>
-        <div style={{ display:"grid", gridTemplateColumns:"repeat(3,44px)", gridTemplateRows:"repeat(3,44px)", gap:4 }}>
-          <div/><DBtn key="up"    label="▲" keyName="ArrowUp"    onClick={() => {}} onMouseDown={() => dpadPress("ArrowUp")}    onMouseUp={() => dpadRelease("ArrowUp")}    onTouchStart={(e) => { dpadPress("ArrowUp"); e.preventDefault(); }}    onTouchEnd={() => dpadRelease("ArrowUp")} />
-          <div/>
-          <DBtn key="left"  label="◀" keyName="ArrowLeft"  onClick={() => {}} onMouseDown={() => dpadPress("ArrowLeft")}  onMouseUp={() => dpadRelease("ArrowLeft")}  onTouchStart={(e) => { dpadPress("ArrowLeft"); e.preventDefault(); }}  onTouchEnd={() => dpadRelease("ArrowLeft")} />
-          <div/>
-          <DBtn key="right" label="▶" keyName="ArrowRight" onClick={() => {}} onMouseDown={() => dpadPress("ArrowRight")} onMouseUp={() => dpadRelease("ArrowRight")} onTouchStart={(e) => { dpadPress("ArrowRight"); e.preventDefault(); }} onTouchEnd={() => dpadRelease("ArrowRight")} />
-          <div/>
-          <DBtn key="down"  label="▼" keyName="ArrowDown"  onClick={() => {}} onMouseDown={() => dpadPress("ArrowDown")}  onMouseUp={() => dpadRelease("ArrowDown")}  onTouchStart={(e) => { dpadPress("ArrowDown"); e.preventDefault(); }}  onTouchEnd={() => dpadRelease("ArrowDown")} />
-          <div/>
-        </div>
-        <div style={{ color:"#888", fontSize:12, fontWeight:700, letterSpacing:1, lineHeight:1.8 }}>
-          🎮 <span style={{ color:"#ff8c00" }}>Makey Makey:</span> conecte nas setas ↑↓←→<br/>
-          🖥️ Teclado: setas direcionais<br/>
-          📱 Toque: use os botões ao lado
-        </div>
-      </div>
-    </div>
-  );
-}
+        msg_text = gd["msg"] if t < gd["msg_until"] else ""
+        draw_message(game_surf, msg_text, f["msg"])
+
+        # Tela de game over
+        if gd["game_over"]:
+            ov = pygame.Surface((W,H), pygame.SRCALPHA)
+            ov.fill((0,0,0,160))
+            game_surf.blit(ov, (0,0))
+            draw_text_shadow(game_surf, f"FIM! {gd['score']} pontos!", f["title_big"],
+                             (255,215,0),(180,60,0), W//2, H//2-30, center=True)
+            draw_text(game_surf, "R = Voltar ao menu", f["hud"],
+                      (200,200,255), W//2, H//2+14, center=True)
+
+        # Monta o canvas completo (HUD + jogo)
+        self.game_canvas.fill((18,18,42))
+        draw_hud(self.game_canvas, gd["score"], int(gd["time_left"]), gd["level"],
+                 MAPS[self.map_id]["name"], f["title"], f["hud"])
+        self.game_canvas.blit(game_surf, (0, HUD_H))
+
+        # Escala o canvas para a janela e exibe
+        scaled = pygame.transform.scale(self.game_canvas, (self.win_w, self.win_h))
+        self.screen.blit(scaled, (0, 0))
+        pygame.display.flip()
+
+    def run(self):
+        running  = True
+        last_t   = time.time()
+        while running:
+            now = time.time()
+            dt  = min(now - last_t, 0.05)
+            last_t = now
+            running = self.handle_events()
+            self.update(dt)
+            self.draw()
+            self.clock.tick(FPS)
+        pygame.quit()
+        sys.exit()
+
+
+if __name__ == "__main__":
+    AgenteManaus().run()
