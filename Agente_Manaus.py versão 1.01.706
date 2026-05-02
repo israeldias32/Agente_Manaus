@@ -574,6 +574,14 @@ class TelaCinicial:
         foot=self.f["card_desc"].render("Manaus, Amazonas -- Jogue limpo!",True,(100,140,180))
         surf.blit(foot,(W//2-foot.get_width()//2,H+HUD_H-22))
 
+        # Versao no canto inferior direito
+        ver_surf  = self.f["hud"].render("1.01.706", True, (200, 200, 220))
+        beta_surf = self.f["card_desc"].render("versao BETA", True, (255, 180, 60))
+        ver_x  = W - ver_surf.get_width()  - 10
+        beta_x = W - beta_surf.get_width() - 10
+        surf.blit(ver_surf,  (ver_x,  H + HUD_H - 34))
+        surf.blit(beta_surf, (beta_x, H + HUD_H - 18))
+
 
 class AgenteManaus:
     def __init__(self):
@@ -687,8 +695,11 @@ class AgenteManaus:
                 gd["collect_anims"].append({**it,"start":t})
                 gd["msg"]=f"{it['label']}! +{it['pts']}pts"; gd["msg_until"]=t+0.9
                 if all(i["collected"] for i in gd["items"]):
-                    gd["level"]+=1; gd["time_left"]=min(gd["time_left"]+15,90)
-                    gd["msg"]=f"NIVEL {gd['level']}! +15s"; gd["msg_until"]=t+1.6
+                    gd["level"]+=1
+                    # Cada nivel reduz o bonus em 2s (minimo 5s)
+                    time_gain = max(5, 15 - (gd["level"] - 1) * 2)
+                    gd["time_left"]=min(gd["time_left"]+time_gain,90)
+                    gd["msg"]=f"NIVEL {gd['level']}! +{time_gain}s"; gd["msg_until"]=t+1.6
                     gd["next_spawn"]=t+0.6
         gd["collect_anims"]=[a for a in gd["collect_anims"] if t-a["start"]<0.85]
 
