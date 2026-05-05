@@ -626,7 +626,7 @@ class AgenteManaus:
             "player":{"x":MAP_SPAWN[map_id][0],"y":MAP_SPAWN[map_id][1],"dir":0,"moving":False},
             "items":spawn_items(1,mdata),
             "collect_anims":[],"keys":{"up":False,"down":False,"left":False,"right":False},
-            "score":0,"time_left":60.0,"level":1,"timer_acc":0.0,"game_over":False,
+            "score":0,"time_left":60.0,"level":1,"timer_acc":0.0,"game_over":False,"paused":False,
             "bldg_cache":make_bldg_cache(mdata),
             "msg":f"AGENTE MANAUS - {MAPS[map_id]['name']} - Colete o lixo!",
             "msg_until":time.time()+2.2,"next_spawn":None,
@@ -650,6 +650,8 @@ class AgenteManaus:
                         self.state="intro"; self.intro=TelaCinicial(self.game_canvas,self.fonts,self.scale)
                     if event.key==pygame.K_ESCAPE:
                         self.state="intro"; self.intro=TelaCinicial(self.game_canvas,self.fonts,self.scale)
+                    if event.key==pygame.K_p and not gd["game_over"]:
+                        gd["paused"] = not gd["paused"]
                 if event.type==pygame.KEYUP:
                     if event.key==pygame.K_UP:    gd["keys"]["up"]=False
                     if event.key==pygame.K_DOWN:  gd["keys"]["down"]=False
@@ -667,6 +669,7 @@ class AgenteManaus:
         if self.state=="intro": self.intro.update(dt); return
         gd=self.game_data; mdata=MAPS[self.map_id]["data"]
         if gd["game_over"]: return
+        if gd["paused"]: return
         if gd["next_spawn"] and t>=gd["next_spawn"]:
             gd["items"]=spawn_items(gd["level"],mdata); gd["next_spawn"]=None
         gd["timer_acc"]+=dt
@@ -696,8 +699,8 @@ class AgenteManaus:
                 gd["msg"]=f"{it['label']}! +{it['pts']}pts"; gd["msg_until"]=t+0.9
                 if all(i["collected"] for i in gd["items"]):
                     gd["level"]+=1
-                    # Cada nivel reduz o bonus em 2s (minimo 5s)
-                    time_gain = max(5, 15 - (gd["level"] - 1) * 2)
+                    # Cada nivel reduz o bonus em 1s (minimo 5s)
+                    time_gain = max(5, 15 - (gd["level"] - 1) * 1)
                     gd["time_left"]=min(gd["time_left"]+time_gain,90)
                     gd["msg"]=f"NIVEL {gd['level']}! +{time_gain}s"; gd["msg_until"]=t+1.6
                     gd["next_spawn"]=t+0.6
@@ -722,6 +725,15 @@ class AgenteManaus:
             game_surf.blit(flash,(0,0))
         msg_text=gd["msg"] if t<gd["msg_until"] else ""
         draw_message(game_surf,msg_text,f["msg"])
+        # Tela de pausa
+        if gd.get("paused") and not gd["game_over"]:
+            ov=pygame.Surface((W,H),pygame.SRCALPHA); ov.fill((0,0,0,140))
+            game_surf.blit(ov,(0,0))
+            draw_text_shadow(game_surf,"PAUSADO",f["title_big"],
+                             (255,220,50),(180,60,0),W//2,H//2-28,center=True)
+            draw_text(game_surf,"P = Continuar  |  ESC = Menu",f["hud"],
+                      (200,200,255),W//2,H//2+14,center=True)
+
         if gd["game_over"]:
             ov=pygame.Surface((W,H),pygame.SRCALPHA); ov.fill((0,0,0,160))
             game_surf.blit(ov,(0,0))
