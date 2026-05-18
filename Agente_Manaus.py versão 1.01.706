@@ -63,11 +63,10 @@ MAPS = {
     },
 }
 
-# Posicao de spawn do jogador por mapa (coluna, linha) em tiles walkable
 MAP_SPAWN = {
-    1: (7.5, 4.5),   # Centro de Manaus  -- rua horizontal central
-    2: (7.5, 7.5),   # Teatro Amazonas   -- rua abaixo do teatro (cell 0, rows 6-8)
-    3: (7.5, 4.5),   # Adrianopolis      -- rua horizontal central
+    1: (7.5, 4.5),
+    2: (7.5, 7.5),
+    3: (7.5, 4.5),
 }
 
 MAP_THEMES = {
@@ -480,10 +479,18 @@ class TelaCinicial:
                 p["life"]=random.uniform(2,5)
 
     def handle_event(self,event):
+        map_ids = list(MAPS.keys())  # [1, 2, 3]
         if event.type==pygame.KEYDOWN:
             if event.key==pygame.K_1: self.selected_map=1
             if event.key==pygame.K_2: self.selected_map=2
             if event.key==pygame.K_3: self.selected_map=3
+            # ── NOVO: setas esquerda/direita navegam entre os cards ──
+            if event.key==pygame.K_LEFT:
+                idx = map_ids.index(self.selected_map)
+                self.selected_map = map_ids[(idx - 1) % len(map_ids)]
+            if event.key==pygame.K_RIGHT:
+                idx = map_ids.index(self.selected_map)
+                self.selected_map = map_ids[(idx + 1) % len(map_ids)]
             if event.key in (pygame.K_RETURN,pygame.K_SPACE): return "start"
         if event.type==pygame.MOUSEBUTTONDOWN:
             mx=int(event.pos[0]/self._scale); my=int(event.pos[1]/self._scale)
@@ -548,15 +555,39 @@ class TelaCinicial:
             selected=(self.selected_map==map_id)
             rect=draw_map_card(surf,map_id,cx_,card_y,card_w,card_h,selected,t,self.f)
             self.map_rects[map_id]=rect
+
+        # ── NOVO: setas visuais nos lados dos cards ──────────────────
+        map_ids = list(MAPS.keys())
+        arrow_y = card_y + card_h // 2
+        arrow_pulse = int(180 + 60 * math.sin(t * 3))
+
+        # seta esquerda (só se não estiver no primeiro)
+        if self.selected_map != map_ids[0]:
+            arr_left = pygame.Surface((28, 28), pygame.SRCALPHA)
+            pygame.draw.circle(arr_left, (255,200,50, arrow_pulse), (14,14), 14)
+            arr_lbl = self.f["hud"].render("<", True, (20,10,0))
+            arr_left.blit(arr_lbl, (14 - arr_lbl.get_width()//2, 14 - arr_lbl.get_height()//2))
+            surf.blit(arr_left, (start_x - 36, arrow_y - 14))
+
+        # seta direita (só se não estiver no último)
+        if self.selected_map != map_ids[-1]:
+            arr_right = pygame.Surface((28, 28), pygame.SRCALPHA)
+            pygame.draw.circle(arr_right, (255,200,50, arrow_pulse), (14,14), 14)
+            arr_lbl = self.f["hud"].render(">", True, (20,10,0))
+            arr_right.blit(arr_lbl, (14 - arr_lbl.get_width()//2, 14 - arr_lbl.get_height()//2))
+            surf.blit(arr_right, (start_x + total_w + 8, arrow_y - 14))
+
         sel=MAPS[self.selected_map]
         desc_y=card_y+card_h+12
         desc_full=self.f["subtitle"].render(f"{sel['name']} -- {sel['desc']}",True,(200,220,255))
         surf.blit(desc_full,(W//2-desc_full.get_width()//2,desc_y))
         inst_y=desc_y+26
-        inst_lines=["Setas: Mover  |  Colete lixo antes do tempo acabar!",
+        # ── NOVO: instrução atualizada com as setas ──────────────────
+        inst_lines=["← → : trocar mapa  |  1/2/3 : selecionar direto  |  ENTER/SPACE : jogar",
                     "Cada nivel  ->  mais lixo  +  15 segundos extras"]
         for il,line in enumerate(inst_lines):
-            ls=self.f["card_desc"].render(line,True,(160,180,220))
+            col = (255,220,80) if il==0 else (160,180,220)
+            ls=self.f["card_desc"].render(line,True,col)
             surf.blit(ls,(W//2-ls.get_width()//2,inst_y+il*16))
         btn_y=inst_y+42; btn_w=200; btn_h=44; btn_x=W//2-btn_w//2
         btn_col=lerp_color((220,180,0),(255,220,0),0.5+0.5*math.sin(t*2))
@@ -567,14 +598,12 @@ class TelaCinicial:
         draw_gradient_rect(surf,btn_col,lerp_color(btn_col,(160,120,0),0.4),(btn_x,btn_y,btn_w,btn_h),22)
         pygame.draw.rect(surf,(255,255,180),(btn_x,btn_y,btn_w,btn_h),2,border_radius=22)
         draw_inner_highlight(surf,(btn_x,btn_y,btn_w,btn_h),22,alpha=80)
-        # ── TEXTO DO BOTAO: >> JOGAR << em VERMELHO ──────────────────────────
         btn_s=self.f["btn"].render(">> JOGAR <<",True,(200,0,0))
         surf.blit(btn_s,(W//2-btn_s.get_width()//2,btn_y+btn_h//2-btn_s.get_height()//2))
         self.btn_rect=pygame.Rect(btn_x,btn_y,btn_w,btn_h)
         foot=self.f["card_desc"].render("Manaus, Amazonas -- Jogue limpo!",True,(100,140,180))
         surf.blit(foot,(W//2-foot.get_width()//2,H+HUD_H-22))
 
-        # Versao no canto inferior direito
         ver_surf  = self.f["hud"].render("1.01.706", True, (200, 200, 220))
         beta_surf = self.f["card_desc"].render("versao BETA", True, (255, 180, 60))
         ver_x  = W - ver_surf.get_width()  - 10
@@ -699,7 +728,6 @@ class AgenteManaus:
                 gd["msg"]=f"{it['label']}! +{it['pts']}pts"; gd["msg_until"]=t+0.9
                 if all(i["collected"] for i in gd["items"]):
                     gd["level"]+=1
-                    # Cada nivel reduz o bonus em 1s (minimo 5s)
                     time_gain = max(5, 15 - (gd["level"] - 1) * 1)
                     gd["time_left"]=min(gd["time_left"]+time_gain,90)
                     gd["msg"]=f"NIVEL {gd['level']}! +{time_gain}s"; gd["msg_until"]=t+1.6
@@ -725,7 +753,6 @@ class AgenteManaus:
             game_surf.blit(flash,(0,0))
         msg_text=gd["msg"] if t<gd["msg_until"] else ""
         draw_message(game_surf,msg_text,f["msg"])
-        # Tela de pausa
         if gd.get("paused") and not gd["game_over"]:
             ov=pygame.Surface((W,H),pygame.SRCALPHA); ov.fill((0,0,0,140))
             game_surf.blit(ov,(0,0))
