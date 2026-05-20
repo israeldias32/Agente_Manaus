@@ -484,14 +484,15 @@ class TelaCinicial:
             if event.key==pygame.K_1: self.selected_map=1
             if event.key==pygame.K_2: self.selected_map=2
             if event.key==pygame.K_3: self.selected_map=3
-            # ── NOVO: setas esquerda/direita navegam entre os cards ──
             if event.key==pygame.K_LEFT:
                 idx = map_ids.index(self.selected_map)
                 self.selected_map = map_ids[(idx - 1) % len(map_ids)]
             if event.key==pygame.K_RIGHT:
                 idx = map_ids.index(self.selected_map)
                 self.selected_map = map_ids[(idx + 1) % len(map_ids)]
-            if event.key in (pygame.K_RETURN,pygame.K_SPACE): return "start"
+            # ── MAKEY MAKEY: seta cima e seta baixo também iniciam o jogo ──
+            if event.key in (pygame.K_RETURN, pygame.K_SPACE, pygame.K_UP, pygame.K_DOWN):
+                return "start"
         if event.type==pygame.MOUSEBUTTONDOWN:
             mx=int(event.pos[0]/self._scale); my=int(event.pos[1]/self._scale)
             for mid,rect in self.map_rects.items():
@@ -556,12 +557,10 @@ class TelaCinicial:
             rect=draw_map_card(surf,map_id,cx_,card_y,card_w,card_h,selected,t,self.f)
             self.map_rects[map_id]=rect
 
-        # ── NOVO: setas visuais nos lados dos cards ──────────────────
         map_ids = list(MAPS.keys())
         arrow_y = card_y + card_h // 2
         arrow_pulse = int(180 + 60 * math.sin(t * 3))
 
-        # seta esquerda (só se não estiver no primeiro)
         if self.selected_map != map_ids[0]:
             arr_left = pygame.Surface((28, 28), pygame.SRCALPHA)
             pygame.draw.circle(arr_left, (255,200,50, arrow_pulse), (14,14), 14)
@@ -569,7 +568,6 @@ class TelaCinicial:
             arr_left.blit(arr_lbl, (14 - arr_lbl.get_width()//2, 14 - arr_lbl.get_height()//2))
             surf.blit(arr_left, (start_x - 36, arrow_y - 14))
 
-        # seta direita (só se não estiver no último)
         if self.selected_map != map_ids[-1]:
             arr_right = pygame.Surface((28, 28), pygame.SRCALPHA)
             pygame.draw.circle(arr_right, (255,200,50, arrow_pulse), (14,14), 14)
@@ -582,8 +580,8 @@ class TelaCinicial:
         desc_full=self.f["subtitle"].render(f"{sel['name']} -- {sel['desc']}",True,(200,220,255))
         surf.blit(desc_full,(W//2-desc_full.get_width()//2,desc_y))
         inst_y=desc_y+26
-        # ── NOVO: instrução atualizada com as setas ──────────────────
-        inst_lines=["← → : trocar mapa  |  1/2/3 : selecionar direto  |  ENTER/SPACE : jogar",
+        # instrucao atualizada com as setas cima/baixo para Makey Makey
+        inst_lines=["← → : trocar mapa  |  1/2/3 : selecionar direto  |  ENTER/SPACE/↑/↓ : jogar",
                     "Cada nivel  ->  mais lixo  +  15 segundos extras"]
         for il,line in enumerate(inst_lines):
             col = (255,220,80) if il==0 else (160,180,220)
